@@ -1,1 +1,0 @@
-INSERT INTO wolf.address (city, zipcode, street, house_number) values ('Szeged', 6730, 'Kossuth Lajos', 1)

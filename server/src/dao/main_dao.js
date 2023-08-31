@@ -1,7 +1,6 @@
 const oracledb = require("oracledb");
 const helper = require('../lib/daoHelper')
 const dbConfig = require("../../config/db");
-const {log} = require("../lib/logger")
 
 let connection;
 
@@ -13,102 +12,116 @@ let connection;
 
 const binds = {};
 const options = {
-    outFormat: oracledb.OUT_FORMAT_OBJECT,   // query result format
-    autoCommit: true
-    // extendedMetaData: true,               // get extra metadata
-    // prefetchRows:     100,                // internal buffer allocation size for tuning
-    // fetchArraySize:   100                 // internal buffer allocation size for tuning
+    outFormat: oracledb.OUT_FORMAT_OBJECT,
+    autoCommit: true,
+    batchErrors: true,
 };
 
 
 class dao {
-
-    // User
-
-    async getUser(username, password) {
-        const sql = `SELECT username, email, firstname, lastname, avatar, is_member, is_admin
-                     FROM CLIENT
-                     WHERE username = '${username}'
-                       AND ppassword = '${password}'`;
-
-        try {
-            const result = await connection.execute(sql, binds, options);
-
-            if (!result.rows[0]) {
-                console.log(`[DB] getUser: Invalid username or password!`)
-                return undefined;
-            }
-
-            console.log(`[DB] getUser: ${username} found!`)
-            return result.rows[0];
-        } catch (error) {
-            console.log(error.message);
-            console.log(sql)
-            return undefined;
-        }
-    }
-
-    async getUserByUsername(username, password) {
-        const sql = `SELECT username, email, firstname, lastname, avatar, is_member, is_admin
-                     FROM CLIENT
-                     WHERE username = '${username}'`;
-
-        try {
-            const result = await connection.execute(sql, binds, options);
-
-            if (!result.rows[0]) {
-                console.log(`[DB] getUser: Invalid username or password!`)
-                return undefined;
-            }
-
-            console.log(`[DB] getUser: ${username} found!`)
-            return result.rows[0];
-        } catch (error) {
-            console.log(error.message);
-            console.log(sql)
-            return undefined;
-        }
-    }
-
-    async getAllProducts() {
+    async getAllFiles() {
         const sql = `SELECT *
-                     FROM PRODUCT`;
-
-        return await connection.execute(sql, binds, options);
-    }
-
-    async getProductByID(productID) {
-        const sql = `SELECT *
-                     FROM PRODUCT,
-                          BOOK,
-                          SONG
-                     WHERE PRODUCT.ID = ${productID}`;
+                     FROM FILE_DATA`;
 
         try {
             const result = await connection.execute(sql, binds, options)
+
+            return helper.formatRow(result.rows);
+        } catch (error) {
+            console.log(error);
+            return [];
+        }
+    }
+
+    async getSongData(fileId) {
+        const sql = `SELECT *
+                     FROM FILE_METADATA_VALUES
+                     WHERE id = :fileId`;
+
+        try {
+            const result = await connection.execute(sql, [fileId], options)
+
             return helper.formatRow(result.rows)[0];
         } catch (error) {
             console.log(error);
-            console.log(sql)
             return [];
         }
     }
 
-    // People who bought this product also bought these products
-    async getRelatedProducts(productID) {
+    async getSongsByTerm(term) {
+        const termArray = term.split(' ');
+        const sql = `SELECT ft.*,
+		            lead(location) over (partition by FILE_NAME order by location) as next_location
+                    FROM FILE_TERMS ft
+                    WHERE ft.LOCATION_TYPE_NAME = 'word'
+                    AND ft.term IN (${termArray.map((termValue, index) => { return `:term${index}` }).join(',')})
+                    ORDER BY ft.FILE_NAME, ft.LOCATION`;
+
+        try {
+            const result = await connection.execute(sql, termArray, options)
+
+            return helper.formatRow(result.rows);
+        } catch (error) {
+            console.log(error);
+            return [];
+        } 
+    }
+
+    async getGroupTerms(group) {
+        const sql = `SELECT tg.ID, tg.TERM_GROUP_NAME, ttg.TERM
+                    FROM TERM_GROUPS tg 
+                    JOIN TERM_TERM_GROUPS ttg ON ttg.TERM_GROUP_ID = tg.ID
+                    WHERE tg.TERM_GROUP_NAME = :tg_name`;
+
+        try {
+            const result = await connection.execute(sql, [group], options)
+
+            return helper.formatRow(result.rows);
+        } catch (error) {
+            console.log(error);
+            return [];
+        } 
+        
+    }
+
+    async getSongsByMeta(text) {
+        const sql = `SELECT distinct fmv.*
+                    FROM FILE_METADATA fm
+                    JOIN METADATA me ON me.ID = fm.METADATA_ID 
+                    JOIN METADATA_TYPES mte ON mte.ID = me.METADATA_TYPE_ID
+                    JOIN FILE_METADATA_VALUES fmv ON fmv.ID = fm.FILE_ID 
+                    WHERE me.METADATA_VALUE LIKE '%${text}%'`;
+
+        try {
+            const result = await connection.execute(sql, [], options)
+
+            return helper.formatRow(result.rows);
+        } catch (error) {
+            console.log(error);
+            return [];
+        } 
+    }
+
+    async getSongsLineByOccurrence(termOccurrenceId) {
+        const sql = `SELECT ft.*, fmv.METADATA_JSON, lst.STATISTICS_JSON 
+                    FROM FILE_TERMS ft
+                    JOIN FILE_METADATA_VALUES fmv ON fmv.ID = ft.FILE_ID 
+                    JOIN LOCATION_STATISTIC_VALUES lst ON lst.ID  = ft.LOCATION_ID 
+                    WHERE ft.term_occurrence_id = :term_occurrence_id`;
+
+        try {
+            const result = await connection.execute(sql, [termOccurrenceId], options)
+
+            return helper.formatRow(result.rows);
+        } catch (error) {
+            console.log(error);
+            return [];
+        } 
+    }
+
+    async getLocationTypes() {
         const sql = `SELECT *
-                     FROM WOLF.PRODUCT
-                              LEFT JOIN WOLF.BOOK B on PRODUCT.ID = B.ID
-                              LEFT JOIN WOLF.FILM F on PRODUCT.ID = F.ID
-                              LEFT JOIN WOLF.SONG S on PRODUCT.ID = S.ID
-                     WHERE WOLF.PRODUCT.ID IN (SELECT PRODUCT_ID
-                                               FROM CLIENT_PURCHACES
-                                                        INNER JOIN PURCHASE_INFO PI on CLIENT_PURCHACES.PURCHASE_ID = PI.PURCHASE_ID
-                                               WHERE CLIENT_ID IN (SELECT CLIENT_ID AS "username"
-                                                                   FROM PURCHASE_INFO
-                                                                            INNER JOIN CLIENT_PURCHACES CP on PURCHASE_INFO.PURCHASE_ID = CP.PURCHASE_ID
-                                                                   WHERE PRODUCT_ID = ${productID})
-                                               GROUP BY PRODUCT_ID)`;
+                     FROM LOCATION_TYPES`;
 
         try {
             const result = await connection.execute(sql, binds, options)
@@ -120,11 +133,9 @@ class dao {
         }
     }
 
-
-    async getAllBooks() {
+    async getFileMetadataTypes() {
         const sql = `SELECT *
-                     FROM PRODUCT
-                              INNER JOIN BOOK ON BOOK.ID = PRODUCT.ID`;
+                     FROM METADATA_TYPES`;
 
         try {
             const result = await connection.execute(sql, binds, options)
@@ -136,441 +147,352 @@ class dao {
         }
     }
 
-    async registerUser({username, password, email}) {
-        const sql = `INSERT INTO CLIENT (username, email, ppassword, FIRSTNAME, LASTNAME, AVATAR)
-                     VALUES ('${username}', '${email}', '${password}', 'firstname', 'lastname', 'avatar')`;
+    async setLocationType(location_type) {
+        const sql = `MERGE INTO LOCATION_TYPES lt
+                    USING (
+                        SELECT :location_type_name, :regex, :regex_flags from dual
+                    ) elt
+                    ON (elt.location_type_name = lt.location_type_name)
+                    WHEN MATCHED THEN UPDATE SET lt.regex = elt.regex, lt.regex_flags = elt.regex_flags
+                    WHEN NOT MATCHED THEN INSERT (location_type_name, regex, regex_flags) VALUES (elt.location_type_name, elt.regex, elt.regex_flags)`;
 
         try {
-            await connection.execute(sql, binds, options);
-            console.log(`[DB-CLIENT] Register successful!`);
-            return `[DB-CLIENT] Register successful!`;
+            await connection.execute(sql, [location_type.location_type_name, location_type.regex, location_type.regex_flags], options)
         } catch (error) {
-            console.log(error.message);
-            console.log(sql)
-            return `[DB-CLIENT] Error in Register!`;
+            console.log(error);
+            return [];
         }
     }
 
-    async checkout(username, products) {
-        const today = new Date();
-        const date = today.getFullYear() + '-' + (today.getMonth() + 1) + '-' + today.getDate();
-
-        let clientPurchaseID = await this.getLatestID('CLIENT_PURCHACES');
-        clientPurchaseID = clientPurchaseID.LASTID + 1;
-        if (!clientPurchaseID) {
-            clientPurchaseID = 1;
-        }
-
-        const sql = `INSERT INTO PURCHASE (DELIVERY_OPTION, DDATE, STATUS, CLIENT_PURCHASE_ID)
-                     VALUES ('UPS', TO_DATE('${date}', 'YYYY-MM-DD'), 'In Warehouse', ${clientPurchaseID})`;
+    async getFileByRowid(rowid) {
+        const sql = `SELECT *
+                     FROM FILE_DATA
+                     WHERE rowid = :id`;
 
         try {
-            await connection.execute(sql, binds, options);
+            const result = await connection.execute(sql, [rowid], options)
+
+            return helper.formatRow(result.rows)[0];
+        } catch (error) {
+            console.log(error);
+            return [];
+        }
+    }
+
+    async getLocations() {
+        const sql = `SELECT *
+                     FROM LOCATION_TYPES`;
+
+        try {
+            const result = await connection.execute(sql, binds, options)
+
+            return helper.formatRow(result.rows);
+        } catch (error) {
+            console.log(error);
+            return [];
+        }
+    }
+
+    async getStatistics() {
+        const sql = `SELECT *
+                     FROM STATISTIC_TYPES`;
+
+        try {
+            const result = await connection.execute(sql, binds, options)
+
+            return helper.formatRow(result.rows);
+        } catch (error) {
+            console.log(error);
+            return [];
+        }
+    }
+
+    async saveFile(filePath, fileName) {
+        const sql = `INSERT INTO FILE_DATA (file_path, file_name)
+                     VALUES (:filePath, :fileName)`;
+
+        try {
+            const res = await connection.execute(sql, [filePath, fileName], options);
+            const file = await this.getFileByRowid(res.lastRowid);
+
+            return file;
         } catch (error) {
             console.log(error.message);
             console.log(sql)
         }
+    }
 
-        let purchaseID = await this.getLatestID('PURCHASE');
-        purchaseID = purchaseID.LASTID;
-        if (!purchaseID) {
-            purchaseID = 1;
-        }
-
-        let cp_id = await this.getLatestID('CLIENT_PURCHACES');
-        cp_id = cp_id.LASTID;
-        if (!cp_id) {
-            cp_id = 1;
-        } else {
-            cp_id += 1;
-        }
-
-        const sql2 = `INSERT INTO CLIENT_PURCHACES (CLIENT_ID, PURCHASE_ID, ID)
-                      VALUES ('${username}', ${purchaseID}, ${cp_id})`;
+    async getMetadataByRowid(rowid) {
+        const sql = `SELECT *
+                     FROM METADATA
+                     WHERE rowid = :id`;
 
         try {
-            await connection.execute(sql2, binds, options);
+            const result = await connection.execute(sql, [rowid], options)
+
+            return helper.formatRow(result.rows)[0];
+        } catch (error) {
+            console.log(error);
+            return [];
+        }
+    }
+
+    async saveFileMetadata(metadata_id, file_id) {
+        const sql = `INSERT INTO FILE_METADATA (file_id, metadata_id)
+                     VALUES (:fileId, :metadataId)`;
+
+        try {
+            await connection.execute(sql, [file_id, metadata_id], options);
         } catch (error) {
             console.log(error.message);
-            console.log(sql2)
         }
+    }
 
-        for (const product of products) {
-            const sql = `INSERT INTO PURCHASE_INFO (PURCHASE_ID, PRODUCT_ID, QUANTITY)
-                         VALUES (${purchaseID}, ${product.id}, ${product.quantity})`;
+    async saveMetadata(fileId, metadata) {
+        const sql = `INSERT INTO METADATA (metadata_type_id, metadata_value)
+                    VALUES (:metadata_type_id, :metadata_value)`;
 
+        Object.keys(metadata).forEach(async (metadata_type_id) => {
             try {
-                await connection.execute(sql, binds, options);
+                const res = await connection.execute(sql, [metadata_type_id, metadata[metadata_type_id]], options);
+                const meta = await this.getMetadataByRowid(res.lastRowid);
+                await this.saveFileMetadata(meta.id, fileId);
             } catch (error) {
                 console.log(error.message);
-                console.log(sql)
             }
-        }
+        });
     }
 
-    async getLatestID(tableName) {
-        const sql = `SELECT MAX(ID) AS LastID
-                     FROM ${tableName}`;
-
-        let result = -1;
-
-        try {
-            result = await connection.execute(sql, binds, options);
-            result = result.rows[0];
-        } catch (error) {
-            console.error(error);
-            console.error(`[DAO] Error in getLatestID, see error above.`)
-        }
-
-        return result;
-    }
-
-    // Songs
-
-    async getAllSongs() {
+    async getTermByRowid(rowid) {
         const sql = `SELECT *
-                     FROM PRODUCT
-                              INNER JOIN SONG ON SONG.ID = PRODUCT.ID`;
+                     FROM TERMS
+                     WHERE rowid = :termRowId`;
 
         try {
-            const result = await connection.execute(sql, binds, options)
+            const result = await connection.execute(sql, [rowid], options)
 
-            return helper.formatRow(result.rows);
+            return helper.formatRow(result.rows)[0];
         } catch (error) {
             console.log(error);
             return [];
         }
     }
 
-
-    // Wishlist
-
-    async getWishlistProducts(username) {
+    async getTermOccurenceByRowid(rowid) {
         const sql = `SELECT *
-                     FROM WISHLIST
-                              LEFT JOIN PRODUCT ON WISHLIST.PRODUCT_ID = PRODUCT.ID
-                              LEFT JOIN BOOK ON BOOK.ID = PRODUCT.ID
-                              LEFT JOIN CLIENT ON CLIENT.USERNAME = WISHLIST.USERNAME
-                     WHERE WISHLIST.USERNAME = '${username}'`;
+                     FROM TERM_OCCURRENCES
+                     WHERE rowid = :termRowId`;
 
         try {
-            const result = await connection.execute(sql, binds, options)
-            console.log(`[DB-WISHLIST] Selecting all products for user ${username}!`);
-            return helper.formatRow(result.rows);
+            const result = await connection.execute(sql, [rowid], options)
+
+            return helper.formatRow(result.rows)[0];
         } catch (error) {
             console.log(error);
             return [];
         }
     }
 
-    async addProductIDToWishlist(username, productId) {
-        const sql = `INSERT INTO WISHLIST (username, product_id)
-                     VALUES ('${username}', ${productId})`;
+    async getLocationByRowid(rowid) {
+        const sql = `SELECT *
+                     FROM LOCATIONS
+                     WHERE rowid = :termRowId`;
 
         try {
-            await connection.execute(sql, binds, options);
-            return `[DB-WISHLIST] ${sql}`
+            const result = await connection.execute(sql, [rowid], options)
+
+            return helper.formatRow(result.rows)[0];
+        } catch (error) {
+            console.log(error);
+            return [];
+        }
+    }
+
+    async getTerm(word) {
+        const sql = `SELECT *
+                     FROM TERMS
+                     WHERE term = :term`;
+
+        try {
+            const result = await connection.execute(sql, [word], options)
+
+            return helper.formatRow(result.rows)[0];
+        } catch (error) {
+            console.log(error);
+            return [];
+        }
+    }
+
+    async saveTerm(word) {
+        const sql = `INSERT INTO TERMS (term)
+                     VALUES (:term)`;
+
+        try {
+            const res = await connection.execute(sql, [word], options);
+            const term = await this.getTermByRowid(res.lastRowid);
+            return term;
+        } catch (error) {
+            return await this.getTerm(word);
+        }
+    }
+
+    async saveTermOccurence(termId) {
+        const sql = `INSERT INTO TERM_OCCURRENCES (term_id)
+                     VALUES (:termId)`;
+
+        try {
+            const res = await connection.execute(sql, [termId], options);
+            const termOccurence = await this.getTermOccurenceByRowid(res.lastRowid);
+            return termOccurence;
         } catch (error) {
             console.log(error.message);
-            console.log(sql)
-            return error.message;
+            console.log(sql);
         }
     }
 
-    async removeProductIDFromWishlist(username, productID) {
-        const sql = `DELETE
-                     FROM WISHLIST
-                     WHERE username = '${username}'
-                       AND product_ID = ${productID}
-        `;
+    async saveTermLocation(fileId, locationType, location) {
+        const sql = `INSERT INTO LOCATIONS (file_id, location_type, location)
+                     VALUES (:fileId, :locationType, :locationType)`;
 
         try {
-            await connection.execute(sql, binds, options);
-            return `[DB-WISHLIST] ${sql}`
+            const res = await connection.execute(sql, [fileId, locationType, location], options);
+            const locationData = await this.getLocationByRowid(res.lastRowid);
+            return locationData;
         } catch (error) {
-            throw error
+            console.log(error.message);
+            console.log(sql);
         }
     }
 
-    // Bestsellers
-
-    async getBestsellers() {
-        const sql = `SELECT DISTINCT *
-                     FROM PRODUCT
-                              INNER JOIN (SELECT PRODUCT_ID, SUM(QUANTITY) as "SOLD_AMOUNT"
-                                          FROM PURCHASE_INFO
-                                          GROUP BY PRODUCT_ID
-                                          ORDER BY SOLD_AMOUNT DESC) SOLD ON SOLD.PRODUCT_ID = PRODUCT.ID
-                              LEFT JOIN FILM F on PRODUCT.ID = F.ID
-                              LEFT JOIN BOOK B on PRODUCT.ID = B.ID
-                              LEFT JOIN SONG S on PRODUCT.ID = S.ID
-                     ORDER BY SOLD.SOLD_AMOUNT DESC`
+    async getTermOccurenceLocation(termOccurenceId) {
+        const sql = `SELECT l.*, lt.LOCATION_TYPE_NAME 
+                    FROM TERM_OCCURRENCE_LOCATIONS tol 
+                    JOIN LOCATIONS l ON l.ID = tol.LOCATION_ID
+                    JOIN LOCATION_TYPES lt ON lt.ID = l.LOCATION_TYPE 
+                    WHERE tol.TERM_OCCURRENCE_ID = :term_occurrence_id
+                    AND lt.LOCATION_TYPE_NAME = 'row'`;
 
         try {
-            const result = await connection.execute(sql, binds, options);
-            // log(`[DB-BESTSELLER] Selecting bestsellers!`);
-            return helper.formatRow(result.rows);
-        } catch (error) {
-            log(error);
-            return [];
-        }
+            const result = await connection.execute(sql, [termOccurenceId], options);
 
+            return helper.formatRow(result.rows)[0];
+        } catch (error) {
+            console.log(error.message);
+            console.log(sql);
+        }
     }
 
-    // Featuring
+    async saveTermOccurenceLocation(termOccurenceId, termLocationId) {
+        const sql = `INSERT INTO TERM_OCCURRENCE_LOCATIONS (term_occurrence_id, location_id)
+                     VALUES (:termOccurenceId, :termLocationId)`;
 
-    async getFeaturingProducts() {
+        try {
+            await connection.execute(sql, [termOccurenceId, termLocationId], options);
+        } catch (error) {
+            console.log(error.message);
+            console.log(sql);
+        }
+    }
+
+    async saveLocationStatistic(termLocationId, statisticType, statValue) {
+        const sql = `INSERT INTO LOCATION_STATISTICS (statistic_type, location_id, statistic_value)
+                     VALUES (:statistic_type, :location_id, :statistic_value)`;
+
+        try {
+            await connection.execute(sql, [statisticType, termLocationId, statValue], options);
+        } catch (error) {
+            console.log(error.message);
+            console.log(sql);
+        }
+    }
+
+    async getFileList() {
         const sql = `SELECT *
-                     FROM PRODUCT
-                              LEFT JOIN BOOK B on PRODUCT.ID = B.ID
-                              LEFT JOIN SONG S on PRODUCT.ID = S.ID
-                              LEFT JOIN FILM F on PRODUCT.ID = F.ID
-                     WHERE EXTRACT(YEAR FROM (TO_DATE(RELEASE, 'yyyy-mm-dd'))) = '2022'
-                     ORDER BY RELEASE DESC`
+                     FROM FILE_METADATA_VALUES`;
 
         try {
-            const result = await connection.execute(sql, binds, options);
-            log(`[DB-BESTSELLER] Selecting featuringProducts!`);
+            const result = await connection.execute(sql, binds, options)
+
             return helper.formatRow(result.rows);
         } catch (error) {
-            log(error);
+            console.log(error);
             return [];
         }
-
     }
 
-    // Films
+    async getGroupsdata() {
+        const sql = `SELECT tg.ID, tg.TERM_GROUP_NAME, JSON_ARRAYAGG(ttg.TERM ORDER BY ttg.TERM) AS GROUP_VALUES
+                    FROM TERM_GROUPS tg 
+                    JOIN TERM_TERM_GROUPS ttg ON ttg.TERM_GROUP_ID = tg.ID
+                    GROUP BY tg.ID, tg.TERM_GROUP_NAME`;
 
-    async getAllFilms() {
+        try {
+            const result = await connection.execute(sql, binds, options)
+
+            return helper.formatRow(result.rows);
+        } catch (error) {
+            console.log(error);
+            return [];
+        }
+    }
+
+    async getGroupByRowid(rowid) {
         const sql = `SELECT *
-                     FROM PRODUCT
-                              INNER JOIN FILM ON FILM.ID = PRODUCT.ID`;
+                     FROM TERM_GROUPS
+                     WHERE rowid = :id`;
 
         try {
-            const result = await connection.execute(sql, binds, options)
+            const result = await connection.execute(sql, [rowid], options)
 
-            return helper.formatRow(result.rows);
+            return helper.formatRow(result.rows)[0];
         } catch (error) {
             console.log(error);
             return [];
         }
     }
 
-    // Client
-
-    async getClient(username) {
-        const sql = `SELECT USERNAME, FIRSTNAME, LASTNAME, EMAIL, AVATAR
-                     FROM CLIENT
-                     WHERE USERNAME = '${username}'`;
-
-        try {
-            const result = await connection.execute(sql, binds, options)
-
-            return helper.formatRow(result.rows);
-        } catch (error) {
-            console.log(error);
-            return [];
-        }
-    }
-
-    // Address
-
-    async getAddress(username) {
-        const sql = `SELECT ADDRESS.CITY, ADDRESS.ZIPCODE, ADDRESS.STREET, ADDRESS.HOUSE_NUMBER
-                     FROM CLIENT
-                              INNER JOIN ADDRESS ON ADDRESS.ID = CLIENT.ADDRESS_ID
-                     WHERE CLIENT.USERNAME = '${username}'`;
-
-        try {
-            const result = await connection.execute(sql, binds, options)
-
-            return helper.formatRow(result.rows);
-        } catch (error) {
-            console.log(error);
-            return [];
-        }
-    }
-
-    // Credit Card
-
-    async getCard(username) {
-        const sql = `SELECT NAME, CVC, EXPIRATION_DATE
-                     FROM CREDIT_CARD
-                     WHERE USERNAME = '${username}'`;
-
-        try {
-            const result = await connection.execute(sql, binds, options)
-
-            return helper.formatRow(result.rows);
-        } catch (error) {
-            console.log(error);
-            return [];
-        }
-    }
-
-    // Full Profile
-
-    async getProfile(username) {
-        const client = await this.getClient(username);
-        const address = await this.getAddress(username);
-        const card = await this.getCard(username);
-
-        return {client: client[0], address: address[0], card: card[0]};
-    }
-
-    // Purchases
-
-    async getPurchases(username) {
-        const sql = `SELECT PURCHASE.*
-                     FROM CLIENT_PURCHACES
-                              INNER JOIN CLIENT on CLIENT_PURCHACES.CLIENT_ID = CLIENT.USERNAME
-                              INNER JOIN PURCHASE on CLIENT_PURCHACES.PURCHASE_ID = PURCHASE.ID
-                     WHERE USERNAME = '${username}'`;
-
-        try {
-            const result = await connection.execute(sql, binds, options)
-
-            return helper.formatRow(result.rows);
-        } catch (error) {
-            console.log(error);
-            return [];
-        }
-    }
-
-    // Purchase products
-
-    async getPurchaseProducts(purchaseID) {
-        const sql = `SELECT PRODUCT.*, PURCHASE_INFO.QUANTITY as B_QUANTITY
-                     FROM PURCHASE_INFO
-                              INNER JOIN PURCHASE on PURCHASE_INFO.PURCHASE_ID = PURCHASE.ID
-                              INNER JOIN PRODUCT on PURCHASE_INFO.PRODUCT_ID = PRODUCT.ID
-                     WHERE PURCHASE.ID = ${purchaseID}`;
-
-        try {
-            const result = await connection.execute(sql, binds, options)
-
-            return helper.formatRow(result.rows);
-        } catch (error) {
-            console.log(error);
-            return [];
-        }
-    }
-
-    // Purchases with products
-
-    async getPurchasesWithProducts(username) {
-        const purchases = await this.getPurchases(username);
-
-        const result = [];
-
-        for (const purchase of purchases) {
-            purchase.products = await this.getPurchaseProducts(purchase.id);
-            result.push(purchase);
-        }
-
-        return result;
-    }
-
-    async getStorages() {
+    async getGroup(groupName) {
         const sql = `SELECT *
-                     FROM STORAGE`;
+                     FROM TERM_GROUPS
+                     WHERE term_group_name = :group_name`;
 
         try {
-            const result = await connection.execute(sql, binds, options)
+            const result = await connection.execute(sql, [groupName], options)
 
-            return helper.formatRow(result.rows);
+            return helper.formatRow(result.rows)[0];
         } catch (error) {
             console.log(error);
-            return [];
         }
     }
 
-    // Delete Storage
-
-    async deleteStorage(storageID) {
-        const sql = `DELETE
-                     FROM STORAGE
-                     WHERE ID = ${storageID}`;
+    async saveGroup(groupName) {
+        const sql = `INSERT INTO TERM_GROUPS (term_group_name)
+                     VALUES (:group_name)`;
 
         try {
-            const result = await connection.execute(sql, binds, options)
-
-            return helper.formatRow(result.rows);
+            const res = await connection.execute(sql, [groupName], options);
+            const group = await this.getGroupByRowid(res.lastRowid);
+            return group;
         } catch (error) {
-            console.log(error);
-            return [];
+            return await this.getGroup(groupName);
         }
     }
 
-    // Storage Products
+    async updateGroupsdata(groupData) {
+        const group = await this.saveGroup(groupData.term_group_name);
 
-    async getStorageProducts(storageID) {
-        const sql = `SELECT PRODUCT.ID,
-                            PRODUCT.PRICE,
-                            PRODUCT.NAME,
-                            PRODUCT.GENRE,
-                            PRODUCT.RELEASE,
-                            PRODUCT.IMAGEURL,
-                            PRODUCT.LANGUAGE,
-                            PRODUCT.DESCRIPTION,
-                            PRODUCT.LONGNAME,
-                            STORED_PRODUCTS.QUANTITY
-                     FROM STORED_PRODUCTS
-                              INNER JOIN PRODUCT on PRODUCT.ID = STORED_PRODUCTS.PRODUCT_ID
-                     WHERE STORAGE_ID = ${storageID}`;
+        const sql = `INSERT INTO TERM_TERM_GROUPS (term_group_id, term)
+                     VALUES (:term_group_id, :term)`;
 
         try {
-            const result = await connection.execute(sql, binds, options)
+            const groupBinds = groupData.group_values.map((gValue) => {
+                return [group.id, gValue];
+            });
 
-            return helper.formatRow(result.rows);
+            await connection.executeMany(sql, groupBinds, options)
         } catch (error) {
             console.log(error);
-            return [];
         }
-    }
-
-    async updateProduct(product) {
-        const sql = `UPDATE PRODUCT
-                     SET PRICE       = ${product.price},
-                         NAME        = '${product.name}',
-                         GENRE       = '${product.genre}',
-                         RELEASE     = '${product.release}',
-                         IMAGEURL    = '${product.imageurl}',
-                         LANGUAGE    = '${product.language}',
-                         DESCRIPTION = '${product.description}',
-                         LONGNAME    = '${product.longname}'
-                     WHERE ID = ${product.id}`;
-
-        try {
-            const result = await connection.execute(sql, binds, options)
-
-            return helper.formatRow(result.rows);
-        } catch (error) {
-            console.log(error);
-            return [];
-        }
-    }
-
-
-    async getNumberOfMembers() {
-        const sql = `
-            DECLARE
-                c number(2) := 0;
-            BEGIN
-                c := totalMembers();
-                return;
-            END;`;
-
-        let result = 0;
-
-        try {
-            result = await connection.execute(sql, binds, options);
-        } catch (error) {
-            console.error(error);
-            console.error(`[DAO] Error in getLatestID, see error above.`)
-        }
-
-        return result;
     }
 }
 

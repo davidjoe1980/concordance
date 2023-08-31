@@ -1,6 +1,6 @@
 .header-wrap {
     color: #fff;
-    background: #4c394e;
+    background: #1d5f07;
     position: relative;
     z-index: 10;
 
@@ -47,14 +47,18 @@
 }
 
 .text-input {
-    width: 60%;
+    width: 50%;
     height: 44px;
 
     padding-left: 40px;
 }
 
-.header-search-btn, .header-advanced-search-btn {
-    width: 150px;
+.select-input {
+    width: 15%;
+    height: 44px;
+}
+
+.header-search-btn, .header-save-search-btn {
     height: 45px;
 
     box-sizing: border-box;
@@ -66,16 +70,17 @@
 .header-search-btn {
     border-radius: 5px;
     border: none;
+    width: 10%;
 
-    background-color: rgb(16, 187, 213);
+    background-color: rgba(16, 213, 101, 0.42);
     transition: background .3s;
 
     &:hover {
-        background-color: #29D5EF;
+        background-color: #29ef7f;
     }
 }
 
-.header-advanced-search-btn {
+.header-save-search-btn {
     border: 1px solid rgba(255, 255, 255, 0.7);
     background-color: inherit;
     color: rgba(255, 255, 255, 0.7);
@@ -90,4 +95,10 @@
 
 .text {
     color: white;
+}
+
+.search-loader {
+    position: absolute;
+    left: 50%;
+    top: 100%;
 }

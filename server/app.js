@@ -4,6 +4,8 @@ const path = require("path");
 const bodyParser = require('body-parser')
 const app = express();
 
+global.__basedir = __dirname;
+
 app.use(cors({origin: 'http://localhost:3000'}));
 
 const router = require('./src/routes/router.js');

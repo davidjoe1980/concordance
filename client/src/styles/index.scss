@@ -5,6 +5,11 @@
     padding: 10px 20px;
 }
 
+.home-header {
+    margin: auto;
+    text-align: center;
+}
+
 
 a {
     color: inherit;
@@ -14,17 +19,23 @@ a {
     }
 }
 
-.page-title {
-    color: black;
-    font-weight: bold;
-    font-size: 2rem;
-    font-family: Roboto, sans-serif;
-
-    margin-bottom: 10px;
-
-    letter-spacing: -1.5px;
+.loader {
+    display: flex;
+    align-items: center;
+    justify-content: center;
 }
 
-.pwd-eye {
-    filter: invert(0.5);
+.delete-button {
+    color: red;
+    border: 0;
+}
+
+.add-button {
+    color: green;
+    border: 0;
+}
+
+.clickable-word:hover {
+    background: #999;
+    cursor: pointer;
 }

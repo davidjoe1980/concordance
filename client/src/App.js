@@ -1,53 +1,42 @@
+import React, { useState } from "react";
 import {BrowserRouter as Router, Route, Routes} from "react-router-dom";
+import 'bootstrap/dist/css/bootstrap.min.css';
 import {
-    Basket,
     Header,
     HeaderSecondary,
     Home,
-    Logout,
-    Join,
     Navigation,
-    ProductPage,
-    Profile,
-    TemplatePage,
-    Wishlist
+    UploadSong,
+    Admin,
+    SongList,
+    Song,
+    Results,
+    TermGroups
 } from "./components";
-import React from "react";
 
 import "./styles/index.scss";
-import Books from "./components/products/Books";
-import Films from "./components/products/Films";
-import Songs from "./components/products/Songs";
-import Storages from "./components/storages/Storages";
-
 
 export default function App(){
     document.body.style.backgroundColor = '#F0F0F0';
+    const [searchResults, setSearchResults] = useState([]);
+    const [metaSearchResults, setMetaSearchResults] = useState([]);
 
     return (
         <Router>
             <Navigation/>
-            <Header/>
+            <Header setSearchResults={setSearchResults} setMetaSearchResults={setMetaSearchResults}/>
             <HeaderSecondary/>
-
-            <Routes>
-                <Route path="/" element={<Home/>}/>
-                <Route path="/Join" element={<Join/>}/>
-                <Route path="/Profile" element={<Profile/>}/>
-                <Route path="/Logout" element={<><Logout/><Join/></>}/>
-                <Route path="/basket" element={<Basket/>}/>
-                <Route path="/product/:id/:productTitle" element={<ProductPage/>}/>
-
-                {/* TemplatePages */}
-                <Route path="/wishlist" element={<Wishlist />}/>
-                <Route path="/Books" element={<Books/>}/>
-                <Route path="/Films" element={<Films/>}/>
-                <Route path="/Songs" element={<Songs/>}/>
-                <Route path="/Storages" element={<Storages/>}/>
-                <Route path="/Bestsellers" element={<TemplatePage name={'Bestsellers'} api={'bestsellers'}/>}/>
-            </Routes>
-
-            {/*<Footer/>*/}
+            <div className="main-wrap">
+                <Routes>
+                    <Route path="/" element={<Home/>}/>
+                    <Route path="/upload_song" element={<UploadSong/>}/>
+                    <Route path="/song_list" element={<SongList/>}/>
+                    <Route path="/song" element={<Song setSearchResults={setSearchResults}/>}/>
+                    <Route path="/admin" element={<Admin/>}/>
+                    <Route path="/groups" element={<TermGroups/>}/>
+                    <Route path="/search_results" element={<Results searchResults={searchResults} metaSearchResults={metaSearchResults} />} />
+                </Routes>
+            </div>
         </Router>
     )
 }
